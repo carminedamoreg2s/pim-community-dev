@@ -18,6 +18,8 @@
 -- Dumping data for table `acl_classes`
 --
 
+TRUNCATE TABLE acl_security_identities;
+
 /*!40000 ALTER TABLE `acl_classes` DISABLE KEYS */;
 INSERT INTO `acl_classes` VALUES
     (1,'pim_api_overall_access'),
