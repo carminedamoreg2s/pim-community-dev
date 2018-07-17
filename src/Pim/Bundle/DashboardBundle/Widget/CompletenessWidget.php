@@ -2,10 +2,8 @@
 
 namespace Pim\Bundle\DashboardBundle\Widget;
 
-use Akeneo\Tool\Component\StorageUtils\Repository\IdentifiableObjectRepositoryInterface;
+use Akeneo\Analytics\Bundle\Storage\ElasticsearchAndSql\CompletenessWidget\CompletenessWidgetQuery;
 use Akeneo\UserManagement\Bundle\Context\UserContext;
-use Pim\Bundle\CatalogBundle\Filter\ObjectFilterInterface;
-use Pim\Component\Catalog\Repository\CompletenessRepositoryInterface;
 
 /**
  * Widget to display completeness of products over channels and locales
@@ -16,34 +14,24 @@ use Pim\Component\Catalog\Repository\CompletenessRepositoryInterface;
  */
 class CompletenessWidget implements WidgetInterface
 {
-    /** @var CompletenessRepositoryInterface */
-    protected $completenessRepo;
 
     /** @var UserContext */
     protected $userContext;
 
-    /** @var ObjectFilterInterface */
-    protected $objectFilter;
-
-    /** @var IdentifiableObjectRepositoryInterface */
-    protected $localeRepository;
+    /** @var CompletenessWidgetQuery */
+    protected $completenessWidgetQuery;
 
     /**
-     * @param CompletenessRepositoryInterface       $completenessRepo
-     * @param UserContext                           $userContext
-     * @param ObjectFilterInterface                 $objectFilter
-     * @param IdentifiableObjectRepositoryInterface $localeRepository
+     * CompletenessWidget constructor.
+     * @param UserContext $userContext
+     * @param CompletenessWidgetQuery $completenessWidgetQuery
      */
     public function __construct(
-        CompletenessRepositoryInterface $completenessRepo,
         UserContext $userContext,
-        ObjectFilterInterface $objectFilter,
-        IdentifiableObjectRepositoryInterface $localeRepository
+        CompletenessWidgetQuery $completenessWidgetQuery
     ) {
-        $this->completenessRepo = $completenessRepo;
         $this->userContext      = $userContext;
-        $this->objectFilter     = $objectFilter;
-        $this->localeRepository = $localeRepository;
+        $this->completenessWidgetQuery = $completenessWidgetQuery;
     }
 
     /**
@@ -75,7 +63,7 @@ class CompletenessWidget implements WidgetInterface
      */
     public function getData()
     {
-        $userLocale = $this->userContext->getCurrentLocaleCode();
+        /*$userLocale = $this->userContext->getCurrentLocaleCode();
         $channels = $this->completenessRepo->getProductsCountPerChannels($userLocale);
         $completeProducts = $this->completenessRepo->getCompleteProductsCountPerChannels($userLocale);
 
@@ -99,7 +87,12 @@ class CompletenessWidget implements WidgetInterface
             return isset($channel['locales']);
         });
 
-        return $data;
+        return $data;*/
+
+        $translationLocale = $this->userContext->getCurrentLocaleCode();
+
+        $result = $this->completenessWidgetQuery->fetch($translationLocale);
+        return $result->toArray();
     }
 
     /**
