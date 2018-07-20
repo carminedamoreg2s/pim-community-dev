@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 namespace Akeneo\Analytics\Component\CompletenessWidget\ReadModel;
+use Doctrine\Common\Collections\ArrayCollection;
 
 /**
  *
@@ -30,7 +31,7 @@ class ChannelCompleteness
      * @param int $total
      * @param LocaleCompleteness[] $localeCompletenesses
      */
-    public function __construct(string $channel, int $complete, int $total, array $localeCompletenesses)
+    public function __construct(string $channel, int $complete, int $total, array $localeCompletenesses = [])
     {
         $this->channel = $channel;
         $this->complete = $complete;
@@ -71,7 +72,17 @@ class ChannelCompleteness
     }
 
     /**
-     * @return arrays
+     * @param LocaleCompleteness $localeCompleteness
+     */
+    public function addLocalCompleteness(LocaleCompleteness $localeCompleteness): void
+    {
+        if (!in_array($localeCompleteness, $this->localeCompletenesses, true)) {
+            $this->localeCompletenesses[$localeCompleteness->locale()] = $localeCompleteness;
+        }
+    }
+
+    /**
+     * @return array
      */
     public function toArray(): array
     {

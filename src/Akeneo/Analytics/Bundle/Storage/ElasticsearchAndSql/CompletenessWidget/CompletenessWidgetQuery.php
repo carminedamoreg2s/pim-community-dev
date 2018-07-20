@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Akeneo\Analytics\Bundle\Storage\ElasticsearchAndSql\CompletenessWidget;
 
+use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\ChannelCompleteness;
 use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\CompletenessWidget;
+use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\LocaleCompleteness;
 use Akeneo\Tool\Bundle\ElasticsearchBundle\Client;
 use Doctrine\DBAL\Connection;
 
@@ -36,35 +38,79 @@ class CompletenessWidgetQuery
     }
 
     /**
+     * Generate the completeness widget by searching numbers in MySQL and in Elasticsearch
+     *
      * @param string $translationLocaleCode
      * @return CompletenessWidget
      */
     public function fetch(string $translationLocaleCode): CompletenessWidget
     {
-        $channelsAndLocales = $this->getLocalesByChannel($translationLocaleCode);
-        $categories = $this->getChildCategoryByChannel();
+        $categoriesCodeAndLocalesByChannel = $this->getCategoriesCodesAndLocalesByChannel($translationLocaleCode);
 
-        $completenessWidget = $this->countTotalProductInCategories($categories, $channelsAndLocales);
+        $totalCompleteProductsByChannel = $this->countTotalCompleteProductsInCategoriesByChannel($categoriesCodeAndLocalesByChannel);
+        $totalProductsByChannel = $this->countTotalProductsInCategoriesByChannel($categoriesCodeAndLocalesByChannel);
+        $localesWithNbCompleteByChannel = $this->countTotalProductInCategoriesByChannelAndLocale($categoriesCodeAndLocalesByChannel);
 
-        return $completenessWidget;
+        return $this->generateCompletenessWidgetModel(
+            $translationLocaleCode,
+            $categoriesCodeAndLocalesByChannel,
+            $totalProductsByChannel,
+            $totalCompleteProductsByChannel,
+            $localesWithNbCompleteByChannel
+        );
     }
 
     /**
-     * @param $translationLocaleCode
+     * Search, by channel, all categories children code and active locales
+     *
+     * @param string $translationLocaleCode
      * @return array
+     *
+     *          [channel_code, channel_label, [categoryCodes], [locales]]
+     *
+     *      ex : ['ecommerce', 'Ecommerce', ['print','cameras'...], ['de_DE','fr_FR'...]]
+     *
      */
-    private function getLocalesByChannel($translationLocaleCode): array
+    public function getCategoriesCodesAndLocalesByChannel(string $translationLocaleCode): array
     {
         $sql = <<<SQL
             SELECT
-              channel.code as channel_code,
-              ct.label as channel_label,
-              JSON_ARRAYAGG(locale.code) as locale_codes
-            FROM pim_catalog_channel as channel
-              INNER JOIN pim_catalog_channel_locale as channel_locale ON channel.id = channel_locale.channel_id
-              INNER JOIN pim_catalog_locale as locale ON channel_locale.locale_id = locale.id
-              LEFT JOIN pim_catalog_channel_translation ct ON ct.foreign_key = channel.id AND ct.locale = :locale
-            GROUP BY channel.code, ct.label
+                channel.code as channel_code,
+                channel_translation.label as channel_label,
+                JSON_ARRAY_APPEND(child.children_codes, '$', root.code) as category_codes_in_channel,
+                pim_locales.json_locales as locales
+            FROM
+                pim_catalog_category AS root
+                LEFT JOIN
+                (
+                    SELECT
+                        child.root as root_id,
+                        JSON_ARRAYAGG(child.code) as children_codes
+                    FROM
+                        pim_catalog_category child
+                    WHERE
+                        child.parent_id IS NOT NULL
+                    GROUP BY
+                        child.root
+                ) AS child ON root.id = child.root_id
+                JOIN pim_catalog_channel as channel ON root.id = channel.category_id
+                LEFT JOIN pim_catalog_channel_translation as channel_translation ON channel.id = channel_translation.foreign_key
+                LEFT JOIN
+                (
+                    SELECT
+                      channel.code as channel_code,
+                      channel.category_id,
+                      JSON_ARRAYAGG(locale.code) as json_locales
+                    FROM pim_catalog_channel as channel
+                    LEFT JOIN pim_catalog_channel_locale channel_locale ON channel.id = channel_locale.channel_id
+                    LEFT JOIN pim_catalog_locale locale ON channel_locale.locale_id = locale.id
+                    GROUP BY
+                        channel.code
+                ) AS pim_locales on pim_locales.channel_code = channel.code
+            WHERE
+                root.parent_id IS NULL AND channel_translation.locale = :locale
+            ORDER BY
+                channel.code, root.code
 SQL;
 
         $rows = $this->connection->executeQuery(
@@ -74,82 +120,230 @@ SQL;
             ]
         )->fetchAll();
 
-        $locales = [];
-        foreach ($rows as $row) {
-            $localeCodes = null !== $row['locale_codes'] ? explode(',', $row['locale_codes']) : [];
-
-            $locales[$row['channel_label']] = $localeCodes;
-        }
-
-        return $locales;
+        return $rows;
     }
 
-    /**
-     * @return array
-     */
-    private function getChildCategoryByChannel(): array
-    {
-        $sql = <<<SQL
-            SELECT
-              channel.code as channel_code,
-              JSON_ARRAYAGG(child.code) as child_codes
-            FROM
-              pim_catalog_category as root
-              INNER JOIN pim_catalog_category as child on root.id = child.parent_id
-              INNER JOIN pim_catalog_channel as channel ON root.id = channel.category_id
-              INNER JOIN pim_catalog_channel_locale as channel_locale ON channel.id = channel_locale.channel_id
-              INNER JOIN pim_catalog_locale as locale ON channel_locale.locale_id = locale.id
-            WHERE
-              child.parent_id IS NOT NULL AND root.parent_id IS NULL
-            GROUP BY
-              channel.code, child.root
-SQL;
-
-        $rows = $this->connection->executeQuery($sql)->fetchAll();
-
-        $categories = [];
-        foreach ($rows as $row) {
-            $categoryCodes = null !== $row['child_codes'] ? explode(',', $row['child_codes']) : [];
-
-            $categories[$row['channel_code']] = $categoryCodes;
-        }
-
-        return $categories;
-    }
 
     /**
-     * @param array $categoriesByChannel
+     * Count with Elasticsearch the total number of complete products in categories, by channel
      *
-     * @return CompletenessWidget
+     * @param array $categoriesCodeAndLocalesByChannels
+     *
+     * @return array
+     *      ex: ['ecommerce' => 500 ]
      */
-    private function countTotalProductInCategories(array $categoriesByChannel, array $localeByChannel): CompletenessWidget
+    private function countTotalCompleteProductsInCategoriesByChannel(array $categoriesCodeAndLocalesByChannels): array
     {
-        if (empty($categoriesByChannel)) {
-            return [];
+        if (empty($categoriesCodeAndLocalesByChannels)) {
+            return null;
         }
 
         $body = [];
-        foreach ($categoriesByChannel as $categoryCodes) {
+
+        foreach ($categoriesCodeAndLocalesByChannels as $categoriesCodeAndLocalesByChannel) {
+            $locales = json_decode($categoriesCodeAndLocalesByChannel['locales']);
+
+            $must = [];
+            foreach($locales as $locale) {
+                $must[] = ['term' => ["completeness." . $categoriesCodeAndLocalesByChannel['channel_code'] . ".".$locale => 100]];
+            }
+
+            $body[] = [];
+            $body[] = [
+                'size' => 0,
+                'query' => [
+                    'constant_score' => [
+                        'filter' => [
+                            'bool' => [
+                                'filter' => [
+                                    [
+                                        'terms' => [
+                                            'categories' => json_decode($categoriesCodeAndLocalesByChannel['category_codes_in_channel'])
+                                        ]
+                                    ],
+                                    [
+                                        'bool' => [
+                                            'must' => $must
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ];
+        }
+
+        $rows = $this->client->msearch($this->indexType, $body);
+
+        $index = 0;
+        $totalCompleteProductsByChannel = [];
+
+        foreach ($categoriesCodeAndLocalesByChannels as $categoriesCodeAndLocalesByChannel) {
+            $nbCompleteProducts = $rows['responses'][$index]['hits']['total'] ?? -1;
+            $totalCompleteProductsByChannel[$categoriesCodeAndLocalesByChannel['channel_code']] = $nbCompleteProducts;
+            $index++;
+        }
+
+        return $totalCompleteProductsByChannel;
+    }
+
+    /**
+     * Count with Elasticsearch the total number of products in categories, by channel
+     *
+     * @param array $categoriesCodeAndLocalesByChannels
+     *
+     * @return array
+     *      ex: ['ecommerce' => 1259 ]
+     */
+    private function countTotalProductsInCategoriesByChannel(array $categoriesCodeAndLocalesByChannels): array
+    {
+        if (empty($categoriesCodeAndLocalesByChannels)) {
+            return null;
+        }
+
+        $body = [];
+
+        foreach ($categoriesCodeAndLocalesByChannels as $categoriesCodeAndLocalesByChannel) {
+            $body[] = [];
+            $body[] = [
+                'size' => 0,
+                'query' => [
+                    'constant_score' => [
+                        'filter' => [
+                            'bool' => [
+                                'filter' => [
+                                    [
+                                        'terms' => [
+                                            'categories' => json_decode($categoriesCodeAndLocalesByChannel['category_codes_in_channel'])
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ];
+        }
+
+        $rows = $this->client->msearch($this->indexType, $body);
+
+        $index = 0;
+        $totalProductsByChannel = [];
+
+        foreach ($categoriesCodeAndLocalesByChannels as $categoriesCodeAndLocalesByChannel) {
+            $nbTotalProducts = $rows['responses'][$index]['hits']['total'] ?? -1;
+            $totalProductsByChannel[$categoriesCodeAndLocalesByChannel['channel_code']] = $nbTotalProducts;
+            $index++;
+        }
+
+        return $totalProductsByChannel;
+    }
+
+    /**
+     * Count with Elasticsearch the total number of products in categories,
+     * by channel and by locale
+     *
+     * @param array $categoriesCodeAndLocalesByChannels
+     * @return array
+     *      ex: ['ecommerce' => ['fr_Fr' => 15, 'de_DE' => 1, 'en_US' => 5] ]
+     */
+    private function countTotalProductInCategoriesByChannelAndLocale(array $categoriesCodeAndLocalesByChannels): array
+    {
+        if (empty($categoriesCodeAndLocalesByChannels)) {
+            return null;
+        }
+
+        $body = [];
+        foreach ($categoriesCodeAndLocalesByChannels as $categoriesCodeAndLocalesByChannel) {
+            $locales = json_decode($categoriesCodeAndLocalesByChannel['locales']);
+
+            foreach($locales as $locale) {
+
                 $body[] = [];
                 $body[] = [
                     'size' => 0,
                     'query' => [
                         'constant_score' => [
                             'filter' => [
-                                'terms' => [
-                                    'categories' => $categoryCodes
+                                'bool' => [
+                                    'filter' => [
+                                        [
+                                            'terms' => [
+                                                'categories' => json_decode($categoriesCodeAndLocalesByChannel['category_codes_in_channel'])
+                                            ]
+                                        ],
+                                        [
+                                            'bool' => [
+                                                'should' => [
+                                                    ['term' => ["completeness." . $categoriesCodeAndLocalesByChannel['channel_code'] . "." . $locale => 100]]
+                                                ]
+                                            ]
+                                        ]
+                                    ]
                                 ]
                             ]
                         ]
                     ]
                 ];
+            }
         }
 
         $rows = $this->client->msearch($this->indexType, $body);
 
-        /** TODO - generate CompletenessWidget with ChannelCompleteness */
+        $index = 0;
+        $localesWithNbCompleteByChannel = [];
 
-        $completenessWidget = new CompletenessWidget([]);
+        foreach ($categoriesCodeAndLocalesByChannels as $i => $categoriesCodeAndLocalesByChannel) {
+            $locales = json_decode($categoriesCodeAndLocalesByChannel['locales']);
+            $localesWithNbCompleteByChannel[$categoriesCodeAndLocalesByChannel['channel_code']] = [];
+            foreach ($locales as $locale) {
+                $total = $rows['responses'][$index]['hits']['total'] ?? -1;
+                $localesWithNbCompleteByChannel[$categoriesCodeAndLocalesByChannel['channel_code']][$locale] = $total;
+                $index++;
+            }
+        }
+
+        return $localesWithNbCompleteByChannel;
+    }
+
+    /**
+     * Merge all the data in a CompletenessWidget model
+     *
+     * @param string $translationLocaleCode
+     * @param array $categoriesCodeAndLocalesByChannels
+     * @param array $totalProductsByChannel
+     * @param array $totalCompleteProductsByChannel
+     * @param array $localesWithNbCompleteByChannel
+     * @return CompletenessWidget
+     */
+    public function generateCompletenessWidgetModel(
+            string $translationLocaleCode,
+            array $categoriesCodeAndLocalesByChannels,
+            array $totalProductsByChannel,
+            array $totalCompleteProductsByChannel,
+            array $localesWithNbCompleteByChannel
+        )
+    {
+        $completenessWidget = new CompletenessWidget();
+
+        foreach ($categoriesCodeAndLocalesByChannels as $categoriesCodeAndLocalesByChannel) {
+            $locales = json_decode($categoriesCodeAndLocalesByChannel['locales']);
+            $channelCode = $categoriesCodeAndLocalesByChannel['channel_code'];
+            $channelLabel = $categoriesCodeAndLocalesByChannel['channel_label'];
+
+            $channelCompleteness = new ChannelCompleteness(
+                $channelLabel,
+                $totalCompleteProductsByChannel[$channelCode],
+                $totalProductsByChannel[$channelCode]
+            );
+            foreach ($locales as $localeCode) {
+                $locale = \Locale::getDisplayName($localeCode, $translationLocaleCode);
+                $localeCompleteness = new LocaleCompleteness($locale, $localesWithNbCompleteByChannel[$channelCode][$localeCode]);
+                $channelCompleteness->addLocalCompleteness($localeCompleteness);
+            }
+            $completenessWidget->addChannelCompleteness($channelCompleteness);
+        }
 
         return $completenessWidget;
     }

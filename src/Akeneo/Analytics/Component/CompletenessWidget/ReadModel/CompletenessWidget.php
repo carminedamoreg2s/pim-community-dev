@@ -20,7 +20,7 @@ class CompletenessWidget
      * CompletenessWidget constructor.
      * @param ChannelCompleteness[] $channelCompletenesses
      */
-    public function __construct(array $channelCompletenesses)
+    public function __construct(array $channelCompletenesses = [])
     {
         $this->channelCompletenesses = $channelCompletenesses;
     }
@@ -31,6 +31,16 @@ class CompletenessWidget
     public function channelCompletenesses(): array
     {
         return $this->channelCompletenesses;
+    }
+
+    /**
+     * @param ChannelCompleteness $channelCompleteness
+     */
+    public function addChannelCompleteness(ChannelCompleteness $channelCompleteness): void
+    {
+        if (!in_array($channelCompleteness, $this->channelCompletenesses, true)) {
+            $this->channelCompletenesses[$channelCompleteness->channel()] = $channelCompleteness;
+        }
     }
 
     /**

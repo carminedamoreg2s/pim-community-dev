@@ -63,50 +63,9 @@ class CompletenessWidget implements WidgetInterface
      */
     public function getData()
     {
-        /*$userLocale = $this->userContext->getCurrentLocaleCode();
-        $channels = $this->completenessRepo->getProductsCountPerChannels($userLocale);
-        $completeProducts = $this->completenessRepo->getCompleteProductsCountPerChannels($userLocale);
-
-        $data = [];
-        foreach ($channels as $channel) {
-            $data[$channel['label']] = [
-                'total'    => (int) $channel['total'],
-                'complete' => 0,
-            ];
-        }
-        foreach ($completeProducts as $completeProduct) {
-            $locale = $this->localeRepository->findOneByIdentifier($completeProduct['locale']);
-            if (!$this->objectFilter->filterObject($locale, 'pim.internal_api.locale.view')) {
-                $localeLabel = $this->getCurrentLocaleLabel($completeProduct['locale']);
-                $data[$completeProduct['label']]['locales'][$localeLabel] = (int) $completeProduct['total'];
-                $data[$completeProduct['label']]['complete'] += $completeProduct['total'];
-            }
-        }
-
-        $data = array_filter($data, function ($channel) {
-            return isset($channel['locales']);
-        });
-
-        return $data;*/
-
         $translationLocale = $this->userContext->getCurrentLocaleCode();
 
         $result = $this->completenessWidgetQuery->fetch($translationLocale);
         return $result->toArray();
-    }
-
-    /**
-     * Returns the label of a locale in the specified language
-     *
-     * @param string $code        the code of the locale to translate
-     * @param string $translateIn the locale in which the label should be translated (if null, user locale will be used)
-     *
-     * @return string
-     */
-    private function getCurrentLocaleLabel($code, $translateIn = null)
-    {
-        $translateIn = $translateIn ?: $this->userContext->getCurrentLocaleCode();
-
-        return \Locale::getDisplayName($code, $translateIn);
     }
 }
