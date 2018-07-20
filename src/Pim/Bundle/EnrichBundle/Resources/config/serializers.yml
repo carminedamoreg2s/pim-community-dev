@@ -6,7 +6,6 @@ services:
     pim_internal_api_serializer:
         class: '%pim_internal_api_serializer.class%'
 
-
     pim_enrich.encoder.json:
         public: false
         class: '%pim_enrich.encoder.json.class%'

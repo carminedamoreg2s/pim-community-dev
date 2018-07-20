@@ -42,6 +42,7 @@ Feature: Edit a user groups and roles
       | Roles | |
     And I save the user
     Then I should not see the text "There are unsaved changes."
+    And I refresh current page
     And I visit the "Groups and roles" tab
     And the user "admin" should still have 2 roles
     And the field Roles should contain "Administrator, User"
