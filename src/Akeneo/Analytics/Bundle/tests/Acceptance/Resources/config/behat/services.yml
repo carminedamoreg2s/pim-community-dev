@@ -1,0 +1,7 @@
+services:
+    test.analytics.completeness_widget_context:
+        class: 'Akeneo\Analytics\Bundle\tests\Acceptance\Context\CompletenessWidgetContext'
+        arguments:
+            - '@__symfony__.pim_analytics.elasticsearch_and_sql.in_memory.completeness_widget_query'
+        tags:
+            - { name: fob.context_service }
