@@ -90,6 +90,7 @@ class ChannelCompleteness
         foreach ($this->localeCompletenesses as $localeCompleteness){
             $locales = array_merge($locales, $localeCompleteness->toArray());
         }
+        var_dump($locales);
         return [
             'total' => $this->total,
             'complete' => $this->complete,

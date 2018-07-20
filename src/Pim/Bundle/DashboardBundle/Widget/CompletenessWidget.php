@@ -2,7 +2,7 @@
 
 namespace Pim\Bundle\DashboardBundle\Widget;
 
-use Akeneo\Analytics\Bundle\Storage\ElasticsearchAndSql\CompletenessWidget\CompletenessWidgetQuery;
+use Akeneo\Analytics\Bundle\Storage\ElasticsearchAndSql\CompletenessWidget\GetCompletenessPerChannelAndLocale;
 use Akeneo\UserManagement\Bundle\Context\UserContext;
 
 /**
@@ -18,17 +18,17 @@ class CompletenessWidget implements WidgetInterface
     /** @var UserContext */
     protected $userContext;
 
-    /** @var CompletenessWidgetQuery */
+    /** @var GetCompletenessPerChannelAndLocale */
     protected $completenessWidgetQuery;
 
     /**
      * CompletenessWidget constructor.
      * @param UserContext $userContext
-     * @param CompletenessWidgetQuery $completenessWidgetQuery
+     * @param GetCompletenessPerChannelAndLocale $completenessWidgetQuery
      */
     public function __construct(
         UserContext $userContext,
-        CompletenessWidgetQuery $completenessWidgetQuery
+        GetCompletenessPerChannelAndLocale $completenessWidgetQuery
     ) {
         $this->userContext      = $userContext;
         $this->completenessWidgetQuery = $completenessWidgetQuery;
@@ -63,9 +63,9 @@ class CompletenessWidget implements WidgetInterface
      */
     public function getData()
     {
-        $translationLocale = $this->userContext->getCurrentLocaleCode();
+        $translationLocaleCode = $this->userContext->getCurrentLocaleCode();
+        $result = $this->completenessWidgetQuery->fetch($translationLocaleCode);
 
-        $result = $this->completenessWidgetQuery->fetch($translationLocale);
         return $result->toArray();
     }
 }

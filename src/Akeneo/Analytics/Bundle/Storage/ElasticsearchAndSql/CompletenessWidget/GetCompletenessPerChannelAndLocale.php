@@ -7,6 +7,7 @@ namespace Akeneo\Analytics\Bundle\Storage\ElasticsearchAndSql\CompletenessWidget
 use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\ChannelCompleteness;
 use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\CompletenessWidget;
 use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\LocaleCompleteness;
+use Akeneo\Analytics\Component\CompletenessWidget\Storage\ElasticsearchAndSql\GetCompletenessPerChannelAndLocaleInterface;
 use Akeneo\Tool\Bundle\ElasticsearchBundle\Client;
 use Doctrine\DBAL\Connection;
 
@@ -14,7 +15,7 @@ use Doctrine\DBAL\Connection;
  * @copyright 2018 Akeneo SAS (http://www.akeneo.com)
  * @license   http://opensource.org/licenses/osl-3.0.php  Open Software License (OSL 3.0)
  */
-class CompletenessWidgetQuery
+class GetCompletenessPerChannelAndLocale implements GetCompletenessPerChannelAndLocaleInterface
 {
     /** @var Connection */
     private $connection;
@@ -38,10 +39,7 @@ class CompletenessWidgetQuery
     }
 
     /**
-     * Generate the completeness widget by searching numbers in MySQL and in Elasticsearch
-     *
-     * @param string $translationLocaleCode
-     * @return CompletenessWidget
+     * @inheritdoc
      */
     public function fetch(string $translationLocaleCode): CompletenessWidget
     {
@@ -61,15 +59,7 @@ class CompletenessWidgetQuery
     }
 
     /**
-     * Search, by channel, all categories children code and active locales
-     *
-     * @param string $translationLocaleCode
-     * @return array
-     *
-     *          [channel_code, channel_label, [categoryCodes], [locales]]
-     *
-     *      ex : ['ecommerce', 'Ecommerce', ['print','cameras'...], ['de_DE','fr_FR'...]]
-     *
+     * @inheritdoc
      */
     public function getCategoriesCodesAndLocalesByChannel(string $translationLocaleCode): array
     {
@@ -317,7 +307,7 @@ SQL;
      * @param array $localesWithNbCompleteByChannel
      * @return CompletenessWidget
      */
-    public function generateCompletenessWidgetModel(
+    private function generateCompletenessWidgetModel(
             string $translationLocaleCode,
             array $categoriesCodeAndLocalesByChannels,
             array $totalProductsByChannel,

@@ -2,7 +2,7 @@
 
 namespace spec\Pim\Bundle\DashboardBundle\Widget;
 
-use Akeneo\Analytics\Bundle\Storage\ElasticsearchAndSql\CompletenessWidget\CompletenessWidgetQuery;
+use Akeneo\Analytics\Bundle\Storage\ElasticsearchAndSql\CompletenessWidget\GetCompletenessPerChannelAndLocale;
 use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\ChannelCompleteness;
 use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\CompletenessWidget;
 use Akeneo\Analytics\Component\CompletenessWidget\ReadModel\LocaleCompleteness;
@@ -11,7 +11,7 @@ use Akeneo\UserManagement\Bundle\Context\UserContext;
 
 class CompletenessWidgetSpec extends ObjectBehavior
 {
-    function let(UserContext $userContext, CompletenessWidgetQuery $completenessWidgetQuery)
+    function let(UserContext $userContext, GetCompletenessPerChannelAndLocale $completenessWidgetQuery)
     {
         $this->beConstructedWith($userContext, $completenessWidgetQuery);
     }
