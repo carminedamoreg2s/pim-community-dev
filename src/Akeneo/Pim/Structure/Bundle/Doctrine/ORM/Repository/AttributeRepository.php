@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Akeneo\Pim\Structure\Bundle\Doctrine\ORM\Repository;
 
 use Akeneo\Pim\Structure\Component\Model\AttributeGroup;
@@ -237,6 +239,8 @@ class AttributeRepository extends EntityRepository implements
         if (is_array($codes) && !empty($codes)) {
             $qb->andWhere("att.code IN (:codes)");
             $qb->setParameter('codes', $codes);
+        } elseif (is_array($codes)) {
+            return [];
         }
 
         if (is_array($groupIds) && !empty($groupIds)) {
@@ -252,6 +256,41 @@ class AttributeRepository extends EntityRepository implements
         $result = $qb->getQuery()->execute([], AbstractQuery::HYDRATE_ARRAY);
 
         return array_keys($result);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getAttributesUsableAsFiltersInProductGrid(string $locale, int $limit, int $offset): array
+    {
+        $labelExpr = 'COALESCE(NULLIF(trans.label, \'\'), CONCAT(CONCAT(\'[\', att.code), \']\'))';
+        $groupLabelExpr = 'COALESCE(NULLIF(gtrans.label, \'\'), CONCAT(CONCAT(\'[\', g.code), \']\'))';
+
+        $qb = $this->_em->createQueryBuilder()
+            ->select([
+                'DISTINCT(att.code) as code',
+                'att.type',
+                'att.sortOrder',
+                'att.metricFamily',
+                'att.useableAsGridFilter',
+                sprintf('%s as label', $labelExpr),
+                'g.sortOrder as groupOrder',
+                sprintf('%s as groupLabel', $groupLabelExpr),
+            ])
+            ->from($this->_entityName, 'att')
+            ->leftJoin('att.group', 'g')
+            ->leftJoin('att.translations', 'trans', 'WITH', 'trans.locale = :locale')
+            ->leftJoin('g.translations', 'gtrans', 'WITH', 'gtrans.locale = :locale')
+            ->where('att.useableAsGridFilter = 1')
+            ->setParameter('locale', $locale)
+            ->orderBy('g.sortOrder')
+            ->addOrderBy('att.sortOrder')
+            ->setMaxResults($limit)
+            ->setFirstResult($offset);
+
+        $attributes = $qb->getQuery()->execute([], AbstractQuery::HYDRATE_ARRAY);
+
+        return $attributes;
     }
 
     /**

@@ -76,6 +76,18 @@ interface AttributeRepositoryInterface extends
     public function getAttributeIdsUseableInGrid($codes = null, $groupIds = null);
 
     /**
+     * Get data of attributes usable as filters in the product grid
+     * The data returned are specific to the product grid
+     *
+     * @param string $locale
+     * @param int    $limit
+     * @param int    $offset
+     *
+     * @return array
+     */
+        public function getAttributesUsableAsFiltersInProductGrid(string $locale, int $limit, int $offset): array;
+
+    /**
      * Get the identifier attribute
      * Only one identifier attribute can exists
      *
